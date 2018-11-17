@@ -14,6 +14,9 @@
 
 #define DEBUG 0
 
+#define ANSI_COLOR_RED      "\x1b[30;41m"
+#define ANSI_COLOR_RESET    "\x1b[0m"
+
 #define TITLE "MINESWEEPER"
 #define HELP "minesweeper\nUsage: ms [-w WIDTH (8...26)] [-h HEIGHT (8...64)] "\
              "[-p PROBABILITY (0...100)]"
@@ -35,11 +38,12 @@ typedef struct Coord {
 } Coord;
 
 
-int initFields(Field *, int, int, double);
+void initFields(Field *, int, int, int);
+int setBombs(Field *, Field *, double, int, Coord *);
 void printField(Field *, int, int);
 int readCoord(Coord *, int, int);
 bool allOpen(Field *, Field *);
-bool step(Field *, Coord *, int);
+bool step(Field *, Coord *, int, int *);
 void showMines(Field *, Field *);
 void openFields(Field *);
 int rand_one(double);
@@ -55,8 +59,8 @@ int main(int argc, char **argv)
     double mp = 0.16;
     /* total fields, bombs, error variable */
     int tot, bombs, err;
-    /* hit bomb? */
-    bool hitBomb;
+    /* fist iter? hit bomb? */
+    bool first, hitBomb;
     /* struct to read and pass commands and coordinates */
     Coord next;
 
@@ -110,21 +114,35 @@ int main(int argc, char **argv)
     }
 
     clear();
-    bombs = initFields(field, w, h, mp);
+    initFields(field, w, h, tot);
 
     /* mainloop */
+    bombs = 0;
+    first = true;
     hitBomb = false;
     for(;;) {
-        printf("%d bombs\n", bombs);
+        if (bombs)
+            printf("%d bombs left\n", bombs);
+        else
+            printf("bombs unknown\n");
+
         printField(field, w, h);
         err = readCoord(&next, w, h);
+
+        if (first) {
+            bombs = setBombs(field, field+tot, mp, w, &next);
+            first = false;
+        }
+
         clear();
-        /* printf("x: %d, y: %d\n", next.x, next.y); */
+
         if (err) {
             printf("invalid input, try again...\n");
             continue;
         }
-        hitBomb = step(field, &next, w);
+
+        hitBomb = step(field, &next, w, &bombs);
+
         if (hitBomb) {
             printf("you lost...\n");
             break;
@@ -155,11 +173,10 @@ int main(int argc, char **argv)
 }
 
 
-int initFields(Field *field, int w, int h, double prob)
+/* set neighbour references of each field and init members */
+void initFields(Field *field, int w, int h, int tot)
 {
-    int i, tot, bombs;
-    tot = w * h;
-    bombs = 0;
+    int i;
 
     /* iterate over all cells, set neighbours and bombs */
     for (i = 0; i < tot; ++i) {
@@ -174,9 +191,9 @@ int initFields(Field *field, int w, int h, double prob)
 
         field[i].isOpen     = false;
         field[i].flag       = false;
-        field[i].hasBomb    = rand_one(prob);
-        if (field[i].hasBomb)
-            ++bombs;
+        /* field[i].hasBomb    = rand_one(prob);
+         * if (field[i].hasBomb)
+         *     ++bombs; */
     }
 
     /* UGLY HACK - set corner cases */
@@ -200,19 +217,42 @@ int initFields(Field *field, int w, int h, double prob)
         field[i+w-1].nbs[3] = NULL;         /* dr */
     }
 
+}
+
+
+/* randomly distribute bombs
+ * make sure, the first uncovered field is empty */
+int setBombs(Field *field, Field *end, double prob, int w, Coord *init)
+{
+    int bombs, i;
+    Field *iter, *first;
+
+    bombs = 0;
+    iter = field - 1;
+    first = field + init->x + w * init->y;
+    while(iter != end) {
+        ++iter;
+        if (iter == first)
+            continue;
+        iter->hasBomb = rand_one(prob);
+        if (iter->hasBomb)
+            ++bombs;
+    }
+
     /* iterate over all fields and set neighbouring bombs */
-    Field *end = field + tot;
-    while (field != end) {
-        field->nb = 0;
+    iter = field;
+    while (iter != end) {
+        iter->nb = 0;
         for (i = 0; i < 8; ++i)
-            field->nb += ((field->nbs[i] != NULL && field->nbs[i]->hasBomb) ? 1 : 0);
-        ++field;
+            iter->nb += ((iter->nbs[i] != NULL && iter->nbs[i]->hasBomb) ? 1 : 0);
+        ++iter;
     }
 
     return bombs;
 }
 
 
+/* format and print field array to console */
 void printField(Field *field, int w, int h)
 {
     Field *cur;
@@ -232,7 +272,8 @@ void printField(Field *field, int w, int h)
             else if (cur->isOpen)
                 printf("| %d ", cur->nb);
             else if (cur->flag)
-                printf("| F ");
+                /* printf("| " ANSI_COLOR_RED "F" ANSI_COLOR_RESET " "); */
+                printf("| " "F" " ");
             else
                 printf("|   ");
         }
@@ -252,14 +293,8 @@ int readCoord(Coord *next, int w, int h)
     int x, y;
     char cmd, xalpha;
 
-    /* printf("Enter Coordinate (x, y): "); */
     printf("Enter command (c - uncover, f - flag) and coordinate (a-z, 0-xx): ");
-/* #if WINDOWS */
-/*     err = scanf_s("%c%d", &xalpha, &y); */
-/* #else */
-    /* err = scanf("%c%d", &xalpha, &y); */
     err = scanf("%c%c%d", &cmd, &xalpha, &y);
-/* #endif */
     /* clear stdin */
     while ((c = getchar()) != '\n' && c != EOF);
 
@@ -293,18 +328,21 @@ bool allOpen(Field *field, Field *end)
 
 
 /* perform given command (uncover, flag) on given coordinates */
-bool step(Field *field, Coord *next, int w)
+bool step(Field *field, Coord *next, int w, int *bombs)
 {
     field += (next->x + w * next->y);
 
     if (next->c == 'C') {
+        if (field->flag)
+            *bombs += 1;
         if (field->hasBomb)
             return true;
-        else
+        else if (!field->isOpen)
             openFields(field);
     }
-    else if (next->c == 'F') {
+    else if (next->c == 'F' && !field->isOpen) {
         field->flag = !field->flag;        
+        *bombs += field->flag ? -1 : 1;
     }
 
     return false;
