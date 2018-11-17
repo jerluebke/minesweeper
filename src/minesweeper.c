@@ -5,17 +5,15 @@
 #include <ctype.h>
 #include "parg.h"
 
-#ifdef __unix__
-#define WINDOWS 0
-#elif defined(_WIN32) || defined(WIN32)
-#define WINDOWS 1
-#include <windows.h>
-#endif
-
 #define DEBUG 0
 
-#define ANSI_COLOR_RED      "\x1b[30;41m"
-#define ANSI_COLOR_RESET    "\x1b[0m"
+#define BOLD    "\x1b[1m"
+#define RED     "\x1b[1;97;41m"
+#define RESET   "\x1b[0m"
+const char *colors[] = {"\x1b[1;32m", "\x1b[1;32m", "\x1b[1;32m",     /* green */
+                        "\x1b[1;93m", "\x1b[1;93m", "\x1b[1;93m",
+                        "\x1b[1;91m", "\x1b[1;91m",
+                        "\x1b[1;31m"};
 
 #define TITLE "MINESWEEPER"
 #define HELP "minesweeper\nUsage: ms [-w WIDTH (8...26)] [-h HEIGHT (8...64)] "\
@@ -45,7 +43,7 @@ int readCoord(Coord *, int, int);
 bool allOpen(Field *, Field *);
 bool step(Field *, Coord *, int, int *);
 void showMines(Field *, Field *);
-void openFields(Field *);
+void openFields(Field *, int *);
 int rand_one(double);
 void clear();
 
@@ -120,29 +118,23 @@ int main(int argc, char **argv)
     bombs = 0;
     first = true;
     hitBomb = false;
-    for(;;) {
-        if (bombs)
-            printf("%d bombs left\n", bombs);
-        else
-            printf("bombs unknown\n");
 
+    printf("bombs unknown\n");
+    for(;;) {
         printField(field, w, h);
         err = readCoord(&next, w, h);
+        clear();
 
         if (first) {
             bombs = setBombs(field, field+tot, mp, w, &next);
             first = false;
         }
-
-        clear();
-
         if (err) {
             printf("invalid input, try again...\n");
             continue;
         }
 
         hitBomb = step(field, &next, w, &bombs);
-
         if (hitBomb) {
             printf("you lost...\n");
             break;
@@ -151,22 +143,20 @@ int main(int argc, char **argv)
             printf("you won!\n");
             break;
         }
+
+        printf("%d bombs left\n", bombs);
     }
 
     /* game finished */
     showMines(field, field+tot);
     printField(field, w, h);
 
-#if WINDOWS
-    system("PAUSE");
-#endif
-
     /* cleanup */
     iter = field;
     while (iter != end) {
         free(iter->nbs);
         ++iter;
-    } 
+    }
     free(field);
 
     return EXIT_SUCCESS;
@@ -268,12 +258,11 @@ void printField(Field *field, int w, int h)
         for (j = 0; j < w; ++j) {
             cur = &field[w*i+j];
             if (cur->isOpen && cur->hasBomb)
-                printf("| X ");
+                printf("| " BOLD "X" RESET " ");
             else if (cur->isOpen)
-                printf("| %d ", cur->nb);
+                printf("| " BOLD "%s" "%d" RESET " ", colors[cur->nb], cur->nb);
             else if (cur->flag)
-                /* printf("| " ANSI_COLOR_RED "F" ANSI_COLOR_RESET " "); */
-                printf("| " "F" " ");
+                printf("|" BOLD RED "<F>" RESET);
             else
                 printf("|   ");
         }
@@ -333,15 +322,13 @@ bool step(Field *field, Coord *next, int w, int *bombs)
     field += (next->x + w * next->y);
 
     if (next->c == 'C') {
-        if (field->flag)
-            *bombs += 1;
         if (field->hasBomb)
             return true;
         else if (!field->isOpen)
-            openFields(field);
+            openFields(field, bombs);
     }
     else if (next->c == 'F' && !field->isOpen) {
-        field->flag = !field->flag;        
+        field->flag = !field->flag;
         *bombs += field->flag ? -1 : 1;
     }
 
@@ -361,18 +348,19 @@ void showMines(Field *field, Field *end)
 
 
 /* recusivly open fields which do not neighbour to a bomb */
-void openFields(Field *field)
+void openFields(Field *field, int *bombs)
 {
     field->isOpen = true;
+    *bombs += field->flag ? 1 : 0;
 
     int i;
     for (i = 0; i < 8; ++i) {
         if (!(field->nbs[i] == NULL         \
                 || field->nbs[i]->hasBomb   \
-                || field->nbs[i]->isOpen)) 
+                || field->nbs[i]->isOpen))
         {
             if (field->nbs[i]->nb == 0)
-                openFields(field->nbs[i]);
+                openFields(field->nbs[i], bombs);
             else
                 field->nbs[i]->isOpen = true;
         }
@@ -393,18 +381,6 @@ int rand_one(double prob)
 void clear()
 {
 #if !DEBUG
-#if WINDOWS
-    char fill = ' ';
-    COORD t1 = {0, 0};
-    CONSOLE_SCREEN_BUFFER_INFO s;
-    HANDLE console = GetStdHandle(STD_OUTPUT_HANDLE);
-    GetConsoleScreenBufferInfo(console, &s);
-    DWORD written, cells = s.dwSize.X * s.dwSize.Y;
-    FillConsoleOutputCharacter(console, fill, cells, t1, &written);
-    FillConsoleOutputAttribute(console, s.wAttributes, cells, t1, &written);
-    SetConsoleCursorPosition(console, t1);
-#else 
     puts("\x1B[2J\x1B[H");
 #endif
-#endif 
 }
