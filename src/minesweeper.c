@@ -244,6 +244,8 @@ void printField(Field *field, int w, int h)
 }
 
 
+/* read command and coordinates from user input into Coord struct
+ * returns errorcode */
 int readCoord(Coord *next, int w, int h)
 {
     int err, c;
@@ -277,6 +279,8 @@ int readCoord(Coord *next, int w, int h)
 }
 
 
+/* check if all fields are either uncovered or have a bomb
+ * in that case the game is won */
 bool allOpen(Field *field, Field *end)
 {
     while (field != end) {
@@ -288,6 +292,7 @@ bool allOpen(Field *field, Field *end)
 }
 
 
+/* perform given command (uncover, flag) on given coordinates */
 bool step(Field *field, Coord *next, int w)
 {
     field += (next->x + w * next->y);
@@ -306,6 +311,7 @@ bool step(Field *field, Coord *next, int w)
 }
 
 
+/* uncover all bombs when the game is finished */
 void showMines(Field *field, Field *end)
 {
     while (field != end) {
@@ -316,6 +322,7 @@ void showMines(Field *field, Field *end)
 }
 
 
+/* recusivly open fields which do not neighbour to a bomb */
 void openFields(Field *field)
 {
     field->isOpen = true;
@@ -335,21 +342,16 @@ void openFields(Field *field)
 }
 
 
-/* returns 1 with a probability of prob/tot
+/* returns 1 with given probability
  * else returns 0 */
-/* int randint(int prob, int tot)
- * {
- *     int x = tot+1;
- *     while (x > tot)
- *         x = rand() / ((RAND_MAX + 1u) / tot);
- *     return x < prob ? 1 : 0;
- * } */
 int rand_one(double prob)
 {
     return (rand() < prob * ((double)RAND_MAX + 1.0)) ? 1 : 0;
 }
 
 
+/* clear console window */
+/* solutions for windows and unix */
 void clear()
 {
 #if !DEBUG
