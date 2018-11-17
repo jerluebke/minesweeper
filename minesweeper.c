@@ -11,10 +11,10 @@
 #include <windows.h>
 #endif
 
-#define DEBUG 1
+#define DEBUG 0
 
 
-const char *AZ = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const char AZ[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 typedef struct Field {
     bool hasBomb;
@@ -29,22 +29,15 @@ typedef struct Coord {
     int x, y;
 } Coord;
 
+
 int initFields(Field *, int, int, int);
-
 void printField(Field *, int, int);
-
 int readCoord(Coord *, int, int);
-
 bool allOpen(Field *, Field *);
-
 bool step(Field *, Coord *, int);
-
 void showMines(Field *, Field *);
-
 void openFields(Field *);
-
 int randint(int, int);
-
 void clear();
 
 
@@ -70,13 +63,13 @@ int main(int argc, char **argv)
 
     clear();
     bombs = initFields(field, w, h, mp);
-    printf("%d bombs\n", bombs);
 
     /* mainloop */
     int err;
     Coord next;
-    bool hitMine = false;
+    bool hitBomb = false;
     for(;;) {
+        printf("%d bombs\n", bombs);
         printField(field, w, h);
         if (allOpen(field, field+tot)) {
             printf("you won!\n");
@@ -84,12 +77,13 @@ int main(int argc, char **argv)
         }
         err = readCoord(&next, w, h);
         clear();
+        /* printf("x: %d, y: %d\n", next.x, next.y); */
         if (err) {
             printf("invalid input, try again...\n");
             continue;
         }
-        hitMine = step(field, &next, w);
-        if (hitMine) {
+        hitBomb = step(field, &next, w);
+        if (hitBomb) {
             printf("you lost...\n");
             break;
         }
@@ -97,6 +91,10 @@ int main(int argc, char **argv)
 
     showMines(field, field+tot);
     printField(field, w, h);
+
+#if WINDOWS
+    system("PAUSE");
+#endif
 
     iter = field;
     while (iter != end) {
@@ -204,11 +202,11 @@ int readCoord(Coord *next, int w, int h)
     int x, y;
     char xalpha;
     printf("Enter Coordinate (x, y): ");
-#if WINDOWS
-    err = scanf_s("%c%d", &xalpha, &y);
-#else
+/* #if WINDOWS */
+/*     err = scanf_s("%c%d", &xalpha, &y); */
+/* #else */
     err = scanf("%c%d", &xalpha, &y);
-#endif
+/* #endif */
     xalpha = toupper(xalpha);
     for (x = 0; x < 26; ++x)
         if (AZ[x] == xalpha)
@@ -284,7 +282,7 @@ int randint(int prob, int tot)
 
 void clear()
 {
-#if DEBUG
+#if !DEBUG
 #if WINDOWS
     char fill = ' ';
     COORD t1 = {0, 0};
@@ -295,8 +293,8 @@ void clear()
     FillConsoleOutputCharacter(console, fill, cells, t1, &written);
     FillConsoleOutputAttribute(console, s.wAttributes, cells, t1, &written);
     SetConsoleCursorPosition(console, t1);
-#else
+#else 
     puts("\x1B[2J\x1B[H");
 #endif
-#endif
+#endif 
 }
