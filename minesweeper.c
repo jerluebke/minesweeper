@@ -11,7 +11,7 @@
 #include <windows.h>
 #endif
 
-#define DEBUG 0
+#define DEBUG 1
 
 
 const char *AZ = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -21,7 +21,8 @@ typedef struct Field {
     bool isOpen;
     bool flag;
     int nb;     /* neighbouring bombs */
-    struct Field *u, *ur, *r, *dr, *d, *dl, *l, *ul;
+    /* struct Field *u, *ur, *r, *dr, *d, *dl, *l, *ul; */
+    struct Field **nbs;
 } Field;
 
 typedef struct Coord {
@@ -54,12 +55,21 @@ int main(int argc, char **argv)
     /* width, height, mine probability */
     int w = 8, h = 8, mp = 16;
     int tot = w * h;
+    int bombs;
+
     Field *field = malloc(tot * sizeof(*field));
     if (!field) {
         fprintf(stderr, "Failed to allocate memory!\n");
         return EXIT_FAILURE;
     }
-    int bombs = initFields(field, w, h, mp);
+    Field *iter = field, *end = field + tot;
+    while (iter != end) {
+        iter->nbs = malloc(8 * sizeof(field));
+        ++iter;
+    }
+
+    clear();
+    bombs = initFields(field, w, h, mp);
     printf("%d bombs\n", bombs);
 
     /* mainloop */
@@ -70,12 +80,10 @@ int main(int argc, char **argv)
         printField(field, w, h);
         if (allOpen(field, field+tot)) {
             printf("you won!\n");
-            goto end;
+            break;
         }
         err = readCoord(&next, w, h);
-#ifndef DEBUG
         clear();
-#endif
         if (err) {
             printf("invalid input, try again...\n");
             continue;
@@ -83,15 +91,20 @@ int main(int argc, char **argv)
         hitMine = step(field, &next, w);
         if (hitMine) {
             printf("you lost...\n");
-            goto end;
+            break;
         }
     }
 
-end:
     showMines(field, field+tot);
     printField(field, w, h);
 
+    iter = field;
+    while (iter != end) {
+        free(iter->nbs);
+        ++iter;
+    } 
     free(field);
+
     return EXIT_SUCCESS;
 }
 
@@ -104,14 +117,14 @@ int initFields(Field *field, int w, int h, int prob)
 
     /* iterate over all cells, set neighbours and bombs */
     for (i = 0; i < tot; ++i) {
-        field[i].u  = &field[i-w];
-        field[i].ur = &field[i-w+1];
-        field[i].r  = &field[i+1];
-        field[i].dr = &field[i+w+1];
-        field[i].d  = &field[i+w];
-        field[i].dl = &field[i+w-1];
-        field[i].l  = &field[i-1];
-        field[i].ul = &field[i-w-1];
+        field[i].nbs[0] = &field[i-w];      /* u  */
+        field[i].nbs[1] = &field[i-w+1];    /* ur */
+        field[i].nbs[2] = &field[i+1];      /* r  */
+        field[i].nbs[3] = &field[i+w+1];    /* dr */
+        field[i].nbs[4] = &field[i+w];      /* d  */
+        field[i].nbs[5] = &field[i+w-1];    /* dl */
+        field[i].nbs[6] = &field[i-1];      /* l  */
+        field[i].nbs[7] = &field[i-w-1];    /* ul */
 
         field[i].isOpen     = false;
         field[i].flag       = false;
@@ -123,36 +136,30 @@ int initFields(Field *field, int w, int h, int prob)
     /* UGLY HACK - set corner cases */
     /* upmost and downmost row */
     for (i = 0; i < w; ++i) {
-        field[i].u  = NULL;
-        field[i].ur = NULL;
-        field[i].ul = NULL;
-        field[i+w*(h-1)].d  = NULL;
-        field[i+w*(h-1)].dr = NULL;
-        field[i+w*(h-1)].dl = NULL;
+        field[i].nbs[0] = NULL;             /* u  */
+        field[i].nbs[1] = NULL;             /* ur */
+        field[i].nbs[7] = NULL;             /* ul */
+        field[i+w*(h-1)].nbs[4] = NULL;     /* d  */
+        field[i+w*(h-1)].nbs[3] = NULL;     /* dr */
+        field[i+w*(h-1)].nbs[5] = NULL;     /* dl */
     }
 
     /* leftmost and rightmost column */
     for (i = 0; i < tot; i+=w) {
-        field[i].l  = NULL;
-        field[i].ul = NULL;
-        field[i].dl = NULL;
-        field[i+w-1].r  = NULL;
-        field[i+w-1].ur = NULL;
-        field[i+w-1].dr = NULL;
+        field[i].nbs[6] = NULL;             /* l  */
+        field[i].nbs[7] = NULL;             /* ul */
+        field[i].nbs[5] = NULL;             /* dl */
+        field[i+w-1].nbs[2] = NULL;         /* r  */
+        field[i+w-1].nbs[1] = NULL;         /* ur */
+        field[i+w-1].nbs[3] = NULL;         /* dr */
     }
 
     /* iterate over all fields and set neighbouring bombs */
     Field *end = field + tot;
     while (field != end) {
         field->nb = 0;
-        field->nb += ((field->u  != NULL && field->u->hasBomb)  ? 1 : 0);
-        field->nb += ((field->ur != NULL && field->ur->hasBomb) ? 1 : 0);
-        field->nb += ((field->r  != NULL && field->r->hasBomb)  ? 1 : 0);
-        field->nb += ((field->dr != NULL && field->dr->hasBomb) ? 1 : 0);
-        field->nb += ((field->d  != NULL && field->d->hasBomb)  ? 1 : 0);
-        field->nb += ((field->dl != NULL && field->dl->hasBomb) ? 1 : 0);
-        field->nb += ((field->l  != NULL && field->l->hasBomb)  ? 1 : 0);
-        field->nb += ((field->ul != NULL && field->ul->hasBomb) ? 1 : 0);
+        for (i = 0; i < 8; ++i)
+            field->nb += ((field->nbs[i] != NULL && field->nbs[i]->hasBomb) ? 1 : 0);
         ++field;
     }
 
@@ -228,10 +235,8 @@ bool allOpen(Field *field, Field *end)
 bool step(Field *field, Coord *next, int w)
 {
     field += (next->x + w * next->y);
-    if (field->hasBomb) {
-        field->isOpen = true;
+    if (field->hasBomb)
         return true;
-    }
     openFields(field);
     return false;
 }
@@ -250,29 +255,19 @@ void showMines(Field *field, Field *end)
 void openFields(Field *field)
 {
     field->isOpen = true;
-    /* if (field->u != NULL) {
-     *     if (field->u->nb != 0 && !field->u->hasBomb)
-     *         field->u->isOpen = true;
-     *     else if (field->u->nb == 0 && !field->u->hasBomb)
-     *         openFields(field->u);
-     * } */
 
-    if (!(field->u == NULL  || field->u->nb  || field->u->isOpen))
-        openFields(field->u);
-    if (!(field->ur == NULL || field->ur->nb || field->ur->isOpen))
-        openFields(field->ur);
-    if (!(field->r == NULL  || field->r->nb  || field->r->isOpen))
-        openFields(field->r);
-    if (!(field->dr == NULL || field->dr->nb || field->dr->isOpen))
-        openFields(field->dr);
-    if (!(field->d == NULL  || field->d->nb  || field->d->isOpen))
-        openFields(field->d);
-    if (!(field->dl == NULL || field->dl->nb || field->dl->isOpen))
-        openFields(field->dl);
-    if (!(field->l == NULL  || field->l->nb  || field->l->isOpen))
-        openFields(field->l);
-    if (!(field->ul == NULL || field->ul->nb || field->ul->isOpen))
-        openFields(field->ul);
+    int i;
+    for (i = 0; i < 8; ++i) {
+        if (!(field->nbs[i] == NULL         \
+                || field->nbs[i]->hasBomb   \
+                || field->nbs[i]->isOpen)) 
+        {
+            if (field->nbs[i]->nb == 0)
+                openFields(field->nbs[i]);
+            else
+                field->nbs[i]->isOpen = true;
+        }
+    }
 }
 
 
@@ -289,6 +284,7 @@ int randint(int prob, int tot)
 
 void clear()
 {
+#if DEBUG
 #if WINDOWS
     char fill = ' ';
     COORD t1 = {0, 0};
@@ -301,5 +297,6 @@ void clear()
     SetConsoleCursorPosition(console, t1);
 #else
     puts("\x1B[2J\x1B[H");
+#endif
 #endif
 }
