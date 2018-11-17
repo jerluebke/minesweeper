@@ -1,6 +1,18 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <time.h>
+#include <ctype.h>
+
+#ifdef __unix__
+#define WINDOWS 0
+#elif defined(_WIN32) || defined(WIN32)
+#define WINDOWS 1
+#include <windows.h>
+#endif
+
+#define DEBUG 0
+
 
 const char *AZ = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
@@ -16,11 +28,11 @@ typedef struct Coord {
     int x, y;
 } Coord;
 
-void initFields(Field *, int, int, int);
+int initFields(Field *, int, int, int);
 
 void printField(Field *, int, int);
 
-int readCoord(Coord *);
+int readCoord(Coord *, int, int);
 
 bool allOpen(Field *, Field *);
 
@@ -30,9 +42,15 @@ void showMines(Field *, Field *);
 
 void openFields(Field *);
 
+int randint(int, int);
+
+void clear();
+
 
 int main(int argc, char **argv)
 {
+    srand(time(NULL));
+
     /* width, height, mine probability */
     int w = 8, h = 8, mp = 16;
     int tot = w * h;
@@ -41,7 +59,8 @@ int main(int argc, char **argv)
         fprintf(stderr, "Failed to allocate memory!\n");
         return EXIT_FAILURE;
     }
-    initFields(field, w, h, mp);
+    int bombs = initFields(field, w, h, mp);
+    printf("%d bombs\n", bombs);
 
     /* mainloop */
     int err;
@@ -51,31 +70,37 @@ int main(int argc, char **argv)
         printField(field, w, h);
         if (allOpen(field, field+tot)) {
             printf("you won!\n");
-            break;
+            goto end;
         }
-        err = readCoord(&next);
+        err = readCoord(&next, w, h);
+#ifndef DEBUG
+        clear();
+#endif
         if (err) {
             printf("invalid input, try again...\n");
             continue;
         }
         hitMine = step(field, &next, w);
         if (hitMine) {
-            showMines(field, field+tot);
-            printField(field, w, h);
             printf("you lost...\n");
-            break;
+            goto end;
         }
     }
+
+end:
+    showMines(field, field+tot);
+    printField(field, w, h);
 
     free(field);
     return EXIT_SUCCESS;
 }
 
 
-void initFields(Field *field, int w, int h, int prob)
+int initFields(Field *field, int w, int h, int prob)
 {
-    int i, tot;
+    int i, tot, bombs;
     tot = w * h;
+    bombs = 0;
 
     /* iterate over all cells, set neighbours and bombs */
     for (i = 0; i < tot; ++i) {
@@ -91,6 +116,8 @@ void initFields(Field *field, int w, int h, int prob)
         field[i].isOpen     = false;
         field[i].flag       = false;
         field[i].hasBomb    = randint(prob, tot);
+        if (field[i].hasBomb)
+            ++bombs;
     }
 
     /* UGLY HACK - set corner cases */
@@ -126,7 +153,10 @@ void initFields(Field *field, int w, int h, int prob)
         field->nb += ((field->dl != NULL && field->dl->hasBomb) ? 1 : 0);
         field->nb += ((field->l  != NULL && field->l->hasBomb)  ? 1 : 0);
         field->nb += ((field->ul != NULL && field->ul->hasBomb) ? 1 : 0);
+        ++field;
     }
+
+    return bombs;
 }
 
 
@@ -136,37 +166,48 @@ void printField(Field *field, int w, int h)
     int i, j;
     printf("   ");
     for (i = 0; i < w; ++i)
-        printf("|%s%d %s", (i > 10) ? "" : " ", i, (i == w-1) ? "\n" : "");
+        printf("  %c %s", AZ[i], (i == w-1) ? "\n" : "");
     for (i = 0; i < h; ++i) {
+        printf("   ");
         for (j = 0; j < w; ++j)
             printf("|---%s", (j == w-1) ? "|\n" : "");
-        printf(" %c ", AZ[i]);
+        printf("%s%d ", (i > 10) ? "" : " ", i);
         for (j = 0; j < w; ++j) {
-            cur = &field[i+j];
+            cur = &field[w*i+j];
             if (cur->isOpen && cur->hasBomb)
                 printf("| X ");
             else if (cur->isOpen)
-                printf("| %c ", field[i+j].nb ? field[i+j].nb + '0' : ' ');
+                printf("| %d ", cur->nb);
             else if (cur->flag)
                 printf("| F ");
+            else
+                printf("|   ");
         }
         printf("|\n");
     }
+    printf("   ");
     for (j = 0; j < w; ++j)
         printf("|---%s", (j == w-1) ? "|\n" : "");
 }
 
 
-int readCoord(Coord *next)
+int readCoord(Coord *next, int w, int h)
 {
     int err;
     int x, y;
     char xalpha;
     printf("Enter Coordinate (x, y): ");
+#if WINDOWS
     err = scanf_s("%c%d", &xalpha, &y);
+#else
+    err = scanf("%c%d", &xalpha, &y);
+#endif
+    xalpha = toupper(xalpha);
     for (x = 0; x < 26; ++x)
         if (AZ[x] == xalpha)
             break;
+    if (err == 0 || x == 26 || x >= w || y >= h)
+        return -1;
     next->x = x;
     next->y = y;
     return 0;
@@ -209,20 +250,56 @@ void showMines(Field *field, Field *end)
 void openFields(Field *field)
 {
     field->isOpen = true;
-    if (!(field->u == NULL || field->u->hasBomb))
+    /* if (field->u != NULL) {
+     *     if (field->u->nb != 0 && !field->u->hasBomb)
+     *         field->u->isOpen = true;
+     *     else if (field->u->nb == 0 && !field->u->hasBomb)
+     *         openFields(field->u);
+     * } */
+
+    if (!(field->u == NULL  || field->u->nb  || field->u->isOpen))
         openFields(field->u);
-    if (!(field->ur == NULL || field->ur->hasBomb))
+    if (!(field->ur == NULL || field->ur->nb || field->ur->isOpen))
         openFields(field->ur);
-    if (!(field->r == NULL || field->r->hasBomb))
+    if (!(field->r == NULL  || field->r->nb  || field->r->isOpen))
         openFields(field->r);
-    if (!(field->dr == NULL || field->dr->hasBomb))
+    if (!(field->dr == NULL || field->dr->nb || field->dr->isOpen))
         openFields(field->dr);
-    if (!(field->d == NULL || field->d->hasBomb))
+    if (!(field->d == NULL  || field->d->nb  || field->d->isOpen))
         openFields(field->d);
-    if (!(field->dl == NULL || field->dl->hasBomb))
+    if (!(field->dl == NULL || field->dl->nb || field->dl->isOpen))
         openFields(field->dl);
-    if (!(field->l == NULL || field->l->hasBomb))
+    if (!(field->l == NULL  || field->l->nb  || field->l->isOpen))
         openFields(field->l);
-    if (!(field->ul == NULL || field->ul->hasBomb))
+    if (!(field->ul == NULL || field->ul->nb || field->ul->isOpen))
         openFields(field->ul);
+}
+
+
+/* returns 1 with a probability of prob/tot
+ * else returns 0 */
+int randint(int prob, int tot)
+{
+    int x = tot+1;
+    while (x > tot)
+        x = rand() / ((RAND_MAX + 1u) / tot);
+    return x < prob ? 1 : 0;
+}
+
+
+void clear()
+{
+#if WINDOWS
+    char fill = ' ';
+    COORD t1 = {0, 0};
+    CONSOLE_SCREEN_BUFFER_INFO s;
+    HANDLE console = GetStdHandle(STD_OUTPUT_HANDLE);
+    GetConsoleScreenBufferInfo(console, &s);
+    DWORD written, cells = s.dwSize.X * s.dwSize.Y;
+    FillConsoleOutputCharacter(console, fill, cells, t1, &written);
+    FillConsoleOutputAttribute(console, s.wAttributes, cells, t1, &written);
+    SetConsoleCursorPosition(console, t1);
+#else
+    puts("\x1B[2J\x1B[H");
+#endif
 }
