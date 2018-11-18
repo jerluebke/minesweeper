@@ -43,7 +43,7 @@ int readCoord(Coord *, int, int);
 bool allOpen(Field *, Field *);
 bool step(Field *, Coord *, int, int *);
 void showMines(Field *, Field *);
-void openFields(Field *, int *);
+void openFields(Field *);
 int rand_one(double);
 void clear();
 
@@ -56,7 +56,7 @@ int main(int argc, char **argv)
     int w = 8, h = 8;
     double mp = 0.16;
     /* total fields, bombs, error variable */
-    int tot, bombs, err;
+    int tot, bombs, flags, err;
     /* fist iter? hit bomb? */
     bool first, hitBomb;
     /* struct to read and pass commands and coordinates */
@@ -116,6 +116,7 @@ int main(int argc, char **argv)
 
     /* mainloop */
     bombs = 0;
+    flags = 0;
     first = true;
     hitBomb = false;
 
@@ -134,7 +135,7 @@ int main(int argc, char **argv)
             continue;
         }
 
-        hitBomb = step(field, &next, w, &bombs);
+        hitBomb = step(field, &next, w, &flags);
         if (hitBomb) {
             printf("you lost...\n");
             break;
@@ -144,7 +145,7 @@ int main(int argc, char **argv)
             break;
         }
 
-        printf("%d bombs left\n", bombs);
+        printf("%d / %d  - bombs / flags\n", bombs, flags);
     }
 
     /* game finished */
@@ -317,7 +318,7 @@ bool allOpen(Field *field, Field *end)
 
 
 /* perform given command (uncover, flag) on given coordinates */
-bool step(Field *field, Coord *next, int w, int *bombs)
+bool step(Field *field, Coord *next, int w, int *flags)
 {
     field += (next->x + w * next->y);
 
@@ -325,11 +326,11 @@ bool step(Field *field, Coord *next, int w, int *bombs)
         if (field->hasBomb)
             return true;
         else if (!field->isOpen)
-            openFields(field, bombs);
+            openFields(field);
     }
     else if (next->c == 'F' && !field->isOpen) {
         field->flag = !field->flag;
-        *bombs += field->flag ? -1 : 1;
+        *flags += field->flag ? 1 : -1;
     }
 
     return false;
@@ -348,19 +349,19 @@ void showMines(Field *field, Field *end)
 
 
 /* recusivly open fields which do not neighbour to a bomb */
-void openFields(Field *field, int *bombs)
+void openFields(Field *field)
 {
     field->isOpen = true;
-    *bombs += field->flag ? 1 : 0;
 
     int i;
     for (i = 0; i < 8; ++i) {
         if (!(field->nbs[i] == NULL         \
                 || field->nbs[i]->hasBomb   \
-                || field->nbs[i]->isOpen))
+                || field->nbs[i]->isOpen    \
+                || field->nbs[i]->flag))
         {
             if (field->nbs[i]->nb == 0)
-                openFields(field->nbs[i], bombs);
+                openFields(field->nbs[i]);
             else
                 field->nbs[i]->isOpen = true;
         }
