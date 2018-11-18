@@ -323,6 +323,7 @@ bool step(Field *field, Coord *next, int w, int *flags)
     field += (next->x + w * next->y);
 
     if (next->c == 'C') {
+        *flags += field->flag ? -1 : 0;
         if (field->hasBomb)
             return true;
         else if (!field->isOpen)
